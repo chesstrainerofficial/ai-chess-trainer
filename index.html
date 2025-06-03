@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>2D Chess AI Trainer</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: #121212;
+      color: #e0e0e0;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #infoPanel {
+      margin-top: 1rem;
+      background: #1e1e1e;
+      padding: 1rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+    #board {
+      width: 400px;
+      display: flex;
+      flex-wrap: wrap;
+      margin: 20px;
+    }
+    .square {
+      width: 50px;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .light { background-color: #eee; }
+    .dark { background-color: #444; }
+    .selected { outline: 2px solid yellow; }
+
+    .piece {
+      width: 48px;
+      height: 48px;
+      pointer-events: none;
+    }
+
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      background: #333;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>♟️ 2D Chess AI Trainer</h1>
+
+  <audio autoplay loop>
+    <source src="PenguinCafeOrchestra.mp3" type="audio/mpeg">
+    Your browser does not support the audio element.
+  </audio>
+
+  <button id="startButton">Start Game</button>
+
+  <div id="infoPanel">
+    <p><strong>Your Rank:</strong> <span id="rank"></span></p>
+    <p><strong>Tips:</strong> <span id="tips">Start a game to get feedback.</span></p>
+  </div>
+
+  <div id="board"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@1.0.0/chess.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stockfish/src/stockfish-nnue-16.js"></script>
+  <script>
+    const pieceImages = {
+      w: {
+        p: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+        r: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+        n: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+        b: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+        q: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+        k: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg'
+      },
+      b: {
+        p: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
+        r: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+        n: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+        b: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+        q: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+        k: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg'
+      }
+    };
+
+    const boardEl = document.getElementById("board");
+    const chess = new Chess();
+    const engine = STOCKFISH();
+    let selectedSquare = null;
+
+    const skillData = JSON.parse(localStorage.getItem("chessTrainerSkill")) || {
+      gamesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      blunders: 0,
+      rating: 800
+    };
+
+    function updateRank() {
+      const r = skillData.rating;
+      let rank = "Beginner";
+      if (r > 2000) rank = "Master";
+      else if (r > 1600) rank = "Advanced";
+      else if (r > 1200) rank = "Intermediate";
+      else if (r > 800) rank = "Novice";
+      document.getElementById("rank").textContent = `${rank} (${r})`;
+    }
+
+    function saveSkillData() {
+      localStorage.setItem("chessTrainerSkill", JSON.stringify(skillData));
+    }
+
+    function giveTip(move) {
+      const moveQuality = Math.random();
+      if (moveQuality < 0.2) {
+        skillData.blunders++;
+        skillData.rating -= 10;
+        document.getElementById("tips").textContent = "Blunder! Watch your king's safety and center control.";
+      } else if (moveQuality < 0.5) {
+        document.getElementById("tips").textContent = "Consider developing all pieces and controlling the center.";
+      } else {
+        skillData.rating += 5;
+        document.getElementById("tips").textContent = "Great move! Keep going.";
+      }
+      updateRank();
+      saveSkillData();
+    }
+
+    function renderBoard() {
+      boardEl.innerHTML = "";
+      const board = chess.board();
+      board.forEach((row, rIdx) => {
+        row.forEach((square, cIdx) => {
+          const coord = String.fromCharCode(97 + cIdx) + (8 - rIdx);
+          const div = document.createElement("div");
+          div.className = "square " + ((rIdx + cIdx) % 2 === 0 ? "light" : "dark");
+          div.dataset.square = coord;
+
+          if (square) {
+            const img = document.createElement("img");
+            img.src = pieceImages[square.color][square.type];
+            img.className = "piece";
+            div.appendChild(img);
+          }
+
+          div.addEventListener("click", onSquareClick);
+          boardEl.appendChild(div);
+        });
+      });
+    }
+
+    function onSquareClick(e) {
+      const square = e.currentTarget.dataset.square;
+      if (!selectedSquare) {
+        selectedSquare = square;
+        e.currentTarget.classList.add("selected");
+      } else {
+        const move = chess.move({ from: selectedSquare, to: square, promotion: "q" });
+        clearHighlights();
+        selectedSquare = null;
+
+        if (move) {
+          giveTip(move);
+          renderBoard();
+          engine.postMessage("position fen " + chess.fen());
+          engine.postMessage("go depth 10");
+        }
+      }
+    }
+
+    function clearHighlights() {
+      document.querySelectorAll(".square").forEach(el => el.classList.remove("selected"));
+    }
+
+    engine.onmessage = function(e) {
+      if (typeof e === "string" && e.startsWith("bestmove")) {
+        const parts = e.split(" ");
+        const move = parts[1];
+        if (move && chess.move({ from: move.substring(0, 2), to: move.substring(2, 4), promotion: "q" })) {
+          renderBoard();
+        }
+      }
+    };
+
+    document.getElementById("startButton").addEventListener("click", () => {
+      document.getElementById("tips").textContent = "Game started. Good luck!";
+      engine.postMessage("ucinewgame");
+      engine.postMessage("isready");
+      updateRank();
+      renderBoard();
+    });
+
+    updateRank();
+    renderBoard();
+  </script>
+</body>
+</html>
